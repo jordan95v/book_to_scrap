@@ -12,6 +12,8 @@ from requests.models import Response
 
 @dataclass
 class Book:
+    '''Collect all information from a book.'''
+
     product_url: str = ''
     upc: str = ''
     title: str = ''
@@ -25,6 +27,7 @@ class Book:
 
     @property
     def asdict(self) -> dict:
+        '''Return the completed dict'''
         return asdict(self)
 
 
@@ -58,7 +61,7 @@ class Scrap:
         '''Get the link from all category on the side of the website.
 
         Returns:
-            category_list (list): Return a list with all the category link's URL
+            category (dict): Return a list with all the category link's URL
         '''
         res: Response = requests.get(self.url)
         soup: BeautifulSoup = BeautifulSoup(res.content, 'html.parser')
@@ -76,11 +79,8 @@ class Scrap:
     def get_books_info_on_page(self, books: Tag) -> list:
         '''Get all the information asked for all the books for all category
 
-        TODO:
-            - raise_for_status
-
         Args:
-            books (list): This is a list of all the book available on the page, so you can iterte trhought it, go to the book page and get info.
+            books (list): This is a list of all the book available on the page, so you can iterate throught it, go to the book page and get info.
         '''
         books_metadata: list = []
         for book in books:
@@ -100,7 +100,16 @@ class Scrap:
     def get_info(
         self, book_page: BeautifulSoup, needed_info: str
     ) -> str | None:
-        '''...'''
+        '''Get info of the concerned book.
+
+        Args:
+            book_page (BeautifulSoup): Soup of the book's page.
+            needed_info (str) : The info that we need to collect
+
+        Returns:
+            th.parent.find('td').text (str) : The collected info in returned to fill the dict.
+        '''
+
         th: Tag = book_page.find(
             'th', string=lambda text: needed_info in text.lower()
         )
@@ -108,6 +117,15 @@ class Scrap:
             return th.parent.find('td').text
 
     def get_book_categorie(self, book_page: BeautifulSoup) -> str:
+        '''Get the book's category
+
+        Args:
+            book_page (BeautifulSoup): Soup of the book's page.
+
+        Returns:
+            book_page.find(class_='active').previous_sibling.previous_sibling.find('a').text (str) : The collected info.
+        '''
+
         return (
             book_page.find(class_='active')
             .previous_sibling.previous_sibling.find('a')
@@ -115,6 +133,15 @@ class Scrap:
         )
 
     def get_rating(self, book_page: BeautifulSoup) -> int:
+        '''Get the rating of the book.
+
+        Args:
+            book_page (BeautifulSoup): Soup of the book's page.
+
+        Returns:
+            note.get(rating[1], 0) (int) : The rating of the book is returned.
+        '''
+
         rating: list = book_page.find('p', class_='star-rating')['class']
         note: dict = {
             'One': 1,
@@ -126,6 +153,18 @@ class Scrap:
         return note.get(rating[1], 0)
 
     def get_description(self, book_page: BeautifulSoup) -> str:
+        '''Get the description of the book.
+
+        Args:
+            book_page (BeautifulSoup): Soup of the book's page.
+
+        Raises:
+            AttributeError : If the book don't have a description.
+
+        Returns:
+            book_page.find('div', id='product_description').next_sibling.next_sibling.text (str) : Return the description if there is one.
+        '''
+
         try:
             return book_page.find(
                 'div', id='product_description'
@@ -134,13 +173,40 @@ class Scrap:
             pass
 
     def get_title(self, book_page: BeautifulSoup) -> str:
+        '''Get the title of the book
+
+        Args:
+            book_page (BeautifulSoup): Soup of the book's page.
+
+        Returns:
+            book_page.find('h1').text (str) : Return the title of the book.
+        '''
+
         return book_page.find('h1').text
 
     def get_image_url(self, book_page: BeautifulSoup):
+        '''Get the URL of the book's image.
+
+        Args:
+            book_page (BeautifulSoup): Soup of the book's page.
+
+        Returns:
+            Return the URL of the book's image.
+        '''
+
         return f'http://books.toscrape.com/{book_page.find("img")["src"].replace("../../", "")}'
 
     def get_book(self, book_page: BeautifulSoup, url: str) -> Book:
-        '''...'''
+        '''Put all info of the book in a dataclass.
+
+        Args:
+            book_page (BeautifulSoup): Soup of the book's page.
+            url (str) : URL of the book.
+
+        Returns:
+            Book (dict) : Return a dict with all the book's info inside it.
+        '''
+
         return Book(
             product_url=url,
             upc=self.get_info(book_page, 'upc'),
@@ -191,7 +257,7 @@ class Scrap:
             url (str) : URL of the book's image.
 
         Returns:
-            category_dir (str) :
+            category_dir (Path) : Path to where the file where created / is.
         '''
 
         filename: str = url.split('/')
@@ -204,7 +270,8 @@ class Scrap:
         '''This is for downloading all the images of all books on the website.
 
         Args:
-            info (dict): So you can get the category, to open the corresponding CSV files and write infos inside it !
+            category (str): Category of the book, so you can put them in the corresponding files.
+            url (str) : URL of the book's image.
         '''
 
         try:
@@ -219,11 +286,12 @@ class Scrap:
     def write_csv(self, books_metadata: list, category: str) -> Path:
         '''This is for writing all the infos on the corresponding CSV file.
 
-        Params:
-            books_metadata: [{'upc': 'a', ...}, {'upc': 'b', ...}, ...]
-
         Args:
             info (dict): So you can get the category, to open the corresponding CSV files and write the books's infos inside it !
+            books_metadata (dict) : Contain all the book info, so you can write in the CSV.
+
+        Returns :
+            csvfile (Path) : Path to where the file where created / is.
         '''
         csvfile: Path = self.csv_dir / f'{category}.csv'
         with csvfile.open('w', encoding='UTF-8', newline='') as file:
