@@ -14,7 +14,7 @@ class Scrap:
         url (str): URL of the main page of Books to Scrape.
     '''
 
-    def __init__(self, url) -> None:
+    def __init__(self, url: str) -> None:
         self.url: str = url
 
     def get_category_link(self):
@@ -151,7 +151,7 @@ class Scrap:
             ).content
             f.write(img_download)
 
-    def write_csv(self, info) -> None:
+    def write_csv(self, info: dict) -> None:
         '''This is for writing all the infos on the corresponding CSV file.
 
         Args:
