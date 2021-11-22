@@ -92,7 +92,9 @@ class Scrap:
             book_metadata: Book = self.get_book(book_page, url)
             books_metadata.append(book_metadata)
             try:
-                self.download_image("", book_metadata.category)
+                self.download_image(
+                    book_metadata.image_url, book_metadata.category
+                )
             except KeyError:
                 pass
         return books_metadata
