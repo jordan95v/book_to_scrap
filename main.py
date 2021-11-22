@@ -1,12 +1,31 @@
 from __future__ import annotations
+from dataclasses import asdict, dataclass
 import re
 import requests
 import csv
-from pathlib import Path, WindowsPath
+from pathlib import Path
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 from requests.api import request
 from requests.models import Response
+
+
+@dataclass
+class Book:
+    product_url: str = ''
+    upc: str = ''
+    title: str = ''
+    price_with_tax: str = ''
+    price_without_tax: str = ''
+    available: str = ''
+    category: str = ''
+    image_url: str = ''
+    rating: int = 0
+    description: str = ''
+
+    @property
+    def asdict(self) -> dict:
+        return asdict(self)
 
 
 class Scrap:
@@ -41,32 +60,24 @@ class Scrap:
         Returns:
             category_list (list): Return a list with all the category link's URL
         '''
-
         res: Response = requests.get(self.url)
-
-        soup = BeautifulSoup(res.content, 'html.parser')
-
-        category: list = (
+        soup: BeautifulSoup = BeautifulSoup(res.content, 'html.parser')
+        category: list[Tag] = (
             soup.find(class_='nav nav-list').find('ul').find_all('li')
         )
-
         categories: dict[str, str] = {}
-
         for category in category:
             category_url: str = category.find('a')['href']
             category_name: str = category_url.split('/')[-2]
-            category_name = re.sub(r'([^_]+)_\d+$', r'\1', category_name)
+            category_name = re.sub(r'_\d+$', '', category_name)
             categories[category_name] = category_url
-
         return categories
 
     def get_books_info_on_page(self, books: Tag) -> list:
         '''Get all the information asked for all the books for all category
 
         TODO:
-            - Refactor reusable methods
             - raise_for_status
-            - naming
 
         Args:
             books (list): This is a list of all the book available on the page, so you can iterte trhought it, go to the book page and get info.
@@ -78,10 +89,10 @@ class Scrap:
             book_page: BeautifulSoup = BeautifulSoup(
                 res.content, 'html.parser'
             )
-            info: dict = self.get_book(book_page, url)
-            books_metadata.append(info)
+            book_metadata: Book = self.get_book(book_page, url)
+            books_metadata.append(book_metadata)
             try:
-                self.download_image(info['image_url'], info['category'])
+                self.download_image("", book_metadata.category)
             except KeyError:
                 pass
         return books_metadata
@@ -128,21 +139,20 @@ class Scrap:
     def get_image_url(self, book_page: BeautifulSoup):
         return f'http://books.toscrape.com/{book_page.find("img")["src"].replace("../../", "")}'
 
-    def get_book(self, book_page: BeautifulSoup, url: str) -> dict:
-        info: dict = {
-            'product_url': url,
-            'upc': self.get_info(book_page, 'upc'),
-            'title': self.get_title(book_page),
-            'price_with_tax': self.get_info(book_page, 'price (incl. tax)'),
-            'price_without_tax': self.get_info(book_page, 'price (excl. tax)'),
-            'available': self.get_info(book_page, 'availability'),
-            'category': self.get_book_categorie(book_page),
-            'image_url': self.get_image_url(book_page),
-            'rating': self.get_rating(book_page),
-            'description': self.get_description(book_page),
-        }
-
-        return info
+    def get_book(self, book_page: BeautifulSoup, url: str) -> Book:
+        '''...'''
+        return Book(
+            product_url=url,
+            upc=self.get_info(book_page, 'upc'),
+            title=self.get_title(book_page),
+            price_with_tax=self.get_info(book_page, 'price (incl. tax)'),
+            price_without_tax=self.get_info(book_page, 'price (excl. tax)'),
+            available=self.get_info(book_page, 'availability'),
+            category=self.get_book_categorie(book_page),
+            image_url=self.get_image_url(book_page),
+            rating=self.get_rating(book_page),
+            description=self.get_description(book_page),
+        )
 
     def main(self) -> None:
         '''Iterate throught on all page of all category, so you can collect, so you can collect a list with book link's'''
@@ -158,15 +168,14 @@ class Scrap:
                 print(full_url)
                 # Juste pour savoir où j'en suis dans la boucle :), si tu lis ça t'es un boss
                 res: Response = requests.get(full_url)
-
                 if res.status_code != 200 and count == 1:
                     full_url: str = f'{self.url}{category_url}'
-                    res: Response = requests.get(full_url)
+                    res = requests.get(full_url)
 
                 soup = BeautifulSoup(res.content, 'html.parser')
                 books: Tag = soup.find_all(class_='product_pod')
 
-                if res.status_code == 200:
+                if res.status_code == requests.codes.ok:
                     books_on_page = self.get_books_info_on_page(books)
                     books_metadata.extend(books_on_page)
                     count += 1
@@ -175,7 +184,16 @@ class Scrap:
             self.write_csv(books_metadata, category_name)
 
     def create_image_dir(self, category: str, url: str) -> str:
-        '''...'''
+        '''Create the file where the images are gonna be downloaded.
+
+        Args:
+            category (str): Category of the book, so you can put them in the corresponding files.
+            url (str) : URL of the book's image.
+
+        Returns:
+            category_dir (str) :
+        '''
+
         filename: str = url.split('/')
         category_dir: Path = self.images_dir / category
         category_dir.mkdir(exist_ok=True, parents=True)
@@ -189,11 +207,14 @@ class Scrap:
             info (dict): So you can get the category, to open the corresponding CSV files and write infos inside it !
         '''
 
-        p: Path = self.create_image_dir(category, url)
-
-        with open(p, 'wb') as f:
-            img_download: Response = requests.get(url).content
-            f.write(img_download)
+        try:
+            img_download: Response = requests.get(url)
+            img_download.raise_for_status()
+            image_file: Path = self.create_image_dir(category, url)
+            with image_file.open('wb') as file:
+                file.write(img_download.content)
+        except requests.exceptions.MissingSchema:
+            pass
 
     def write_csv(self, books_metadata: list, category: str) -> Path:
         '''This is for writing all the infos on the corresponding CSV file.
@@ -205,14 +226,20 @@ class Scrap:
             info (dict): So you can get the category, to open the corresponding CSV files and write the books's infos inside it !
         '''
         csvfile: Path = self.csv_dir / f'{category}.csv'
-        with csvfile.open('w', encoding='UTF-8', newline='') as f:
-            fieldnames: list[str] = books_metadata[0].keys()
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+        with csvfile.open('w', encoding='UTF-8', newline='') as file:
+            fieldnames: list[str] = books_metadata[0].asdict.keys()
+            writer = csv.DictWriter(file, fieldnames=fieldnames)
             writer.writeheader()
             for book_metadata in books_metadata:
-                writer.writerow(book_metadata)
+                writer.writerow(book_metadata.asdict)
         return csvfile
 
 
-test = Scrap('http://books.toscrape.com/', 'Images', 'CSV')
-test.main()
+def main() -> None:
+    '''Main function'''
+    test = Scrap('http://books.toscrape.com/', 'Images', 'CSV')
+    test.main()
+
+
+if __name__ == '__main__':
+    main()
