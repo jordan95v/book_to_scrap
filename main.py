@@ -3,10 +3,11 @@ from dataclasses import asdict, dataclass
 import re
 import requests
 import csv
+import sqlite3
 from pathlib import Path
 from bs4 import BeautifulSoup
 from bs4.element import Tag
-from requests.api import request
+from requests.api import head, request
 from requests.models import Response
 
 
@@ -22,7 +23,7 @@ class Book:
     available: str = ''
     category: str = ''
     image_url: str = ''
-    rating: int = 0
+    rating: str = 0
     description: str = ''
 
     @property
@@ -39,7 +40,11 @@ class Scrap:
     '''
 
     def __init__(
-        self, url: str, image_dir: str | Path, csv_dir: str | Path
+        self,
+        url: str,
+        image_dir: str | Path,
+        csv_dir: str | Path,
+        dbname: str | Path,
     ) -> None:
         self.url: str = url
         self.images_dir: Path
@@ -56,6 +61,9 @@ class Scrap:
         else:
             self.csv_dir = csv_dir
         self.csv_dir.mkdir(exist_ok=True, parents=True)
+
+        self.conn = sqlite3.connect(dbname)
+        self.conn.row_factory = sqlite3.Row
 
     def get_category_links(self) -> dict[str, str]:
         '''Get the link from all category on the side of the website.
@@ -218,7 +226,7 @@ class Scrap:
             available=self.get_info(book_page, 'availability'),
             category=self.get_book_categorie(book_page),
             image_url=self.get_image_url(book_page),
-            rating=self.get_rating(book_page),
+            rating=str(self.get_rating(book_page)),
             description=self.get_description(book_page),
         )
 
@@ -250,6 +258,7 @@ class Scrap:
                 else:
                     break
             self.write_csv(books_metadata, category_name)
+            self.write_in_database(books_metadata)
 
     def create_image_dir(self, category: str, url: str) -> str:
         '''Create the file where the images are gonna be downloaded.
@@ -304,10 +313,36 @@ class Scrap:
                 writer.writerow(book_metadata.asdict)
         return csvfile
 
+    def write_in_database(self, books):
+        cur = self.conn.cursor()
+        headers = [key for key in books[0].asdict.keys()]
+
+        cur.execute(f'CREATE TABLE IF NOT EXISTS Info ({headers})')
+        self.conn.commit()
+
+        for book in books:
+            values = [value for value in book.asdict.values()]
+            cur.execute(
+                'INSERT INTO Info VALUES (:product_url, :upc, :title, :price_with_tax, :price_without_tax, :available, :category, :image_url, :rating, :description)',
+                {
+                    'product_url': values[0],
+                    'upc': values[1],
+                    'title': values[2],
+                    'price_with_tax': values[3],
+                    'price_without_tax': values[4],
+                    'available': values[4],
+                    'category': values[5],
+                    'image_url': values[6],
+                    'rating': values[7],
+                    'description': values[-1],
+                },
+            )
+            self.conn.commit()
+
 
 def main() -> None:
     '''Main function'''
-    test = Scrap('http://books.toscrape.com/', 'Images', 'CSV')
+    test = Scrap('http://books.toscrape.com/', 'Images', 'CSV', 'database.db')
     test.main()
 
 
